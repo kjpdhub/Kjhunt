@@ -1,2 +1,3 @@
 streamlit
 feedparser
+youtube-search-python
