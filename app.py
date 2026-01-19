@@ -2,30 +2,25 @@ import streamlit as st
 import feedparser
 from collections import Counter
 import string
+from youtubesearchpython import VideosSearch
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Trend Hunter Trinity", page_icon="🔻", layout="wide")
+st.set_page_config(page_title="Trend Hunter Gap Finder", page_icon="🧿", layout="wide")
 
-# --- THE ENGINE ---
+# --- ENGINE: DEMAND (REDDIT) ---
 def get_trends_for_genre(subreddits):
     all_titles = set()
-    
-    # Scrape
     for sub in subreddits:
         try:
-            # Check Hot + Top Weekly
             rss_urls = [f"https://www.reddit.com/r/{sub}/hot.rss", f"https://www.reddit.com/r/{sub}/top/.rss?t=week"]
             for url in rss_urls:
                 feed = feedparser.parse(url)
                 for entry in feed.entries:
                     clean = entry.title.replace("[Mod Post]", "").replace("[Announcement]", "")
                     all_titles.add(clean)
-        except:
-            pass
+        except: pass
 
-    # Analyze
     words = []
-    # Tuned Stop Words to filter noise from all 3 genres
     stop_words = {
         'the', 'and', 'a', 'to', 'of', 'in', 'i', 'is', 'that', 'it', 'for', 'my', 'on', 'with', 
         'this', 'was', 'have', 'but', 'be', 'are', 'just', 'me', 'from', 'at', 'so', 'not', 
@@ -46,66 +41,74 @@ def get_trends_for_genre(subreddits):
                 if w not in word_to_titles: word_to_titles[w] = []
                 word_to_titles[w].append(title)
     
-    return Counter(words).most_common(10), word_to_titles, len(all_titles)
+    return Counter(words).most_common(5), word_to_titles, len(all_titles)
+
+# --- ENGINE: SUPPLY (YOUTUBE) ---
+def check_supply_gap(keyword, genre_suffix):
+    # Search for the keyword + genre (e.g., "Basement Horror Story")
+    query = f"{keyword} {genre_suffix}"
+    videos_search = VideosSearch(query, limit=10)
+    results = videos_search.result()['result']
+    
+    recent_count = 0
+    recent_markers = ['hour', 'day', 'week', 'month'] # Markers for "Fresh" content
+    
+    for video in results:
+        published = video.get('publishedTime', '')
+        # Check if video was uploaded recently (contains '2 days ago', '1 week ago' etc)
+        if any(marker in published for marker in recent_markers):
+            recent_count += 1
+            
+    return recent_count, results
 
 # --- THE UI ---
-st.title("🔻 The Viral Trinity")
-st.markdown("Combine elements from **Horror**, **Romance**, and **Mystery**.")
+st.title("🧿 Market Gap Finder")
+st.markdown("Find the **Blue Ocean**: High Demand (Reddit) + Low Supply (YouTube).")
 
-if st.button("🚀 RUN TRI-SCAN", type="primary", use_container_width=True):
+if st.button("🚀 SCAN ALL MARKETS", type="primary", use_container_width=True):
     
     col1, col2, col3 = st.columns(3)
     
-    # --- COL 1: HORROR ---
-    with col1:
-        st.header("👻 Horror")
-        with st.spinner("Scanning..."):
-            trends, context, total = get_trends_for_genre(['nosleep', 'shortscarystories', 'ruleshorror'])
-            for rank, (word, count) in enumerate(trends[:5]):
-                sat = (count / total) * 100
-                st.success(f"{word.upper()}")
-                st.caption(f"📊 {sat:.1f}%")
-                with st.expander("Context"):
-                    for t in context[word][:2]: st.write(f"• {t}")
+    # --- HELPER FUNCTION FOR UI ---
+    def render_column(title, emoji, subreddits, genre_suffix, col):
+        with col:
+            st.header(f"{emoji} {title}")
+            with st.spinner("Analyzing..."):
+                trends, context, total = get_trends_for_genre(subreddits)
+                
+                for rank, (word, count) in enumerate(trends):
+                    sat = (count / total) * 100
+                    st.divider()
+                    st.write(f"**#{rank+1} {word.upper()}** (Demand: {sat:.1f}%)")
+                    
+                    # --- THE GAP CHECKER ---
+                    # We use a unique key for each button so they don't conflict
+                    btn_key = f"btn_{title}_{word}"
+                    if st.button(f"🔍 Check Supply", key=btn_key):
+                        recent_videos, video_data = check_supply_gap(word, genre_suffix)
+                        
+                        # LOGIC: SCORING THE GAP
+                        if recent_videos >= 5:
+                            st.error(f"🔴 SATURATED ({recent_videos}/10 recent)")
+                            st.caption("Too many videos this month. Hard to compete.")
+                        elif recent_videos >= 2:
+                            st.warning(f"🟡 MODERATE ({recent_videos}/10 recent)")
+                            st.caption("Some competition. Needs a twist.")
+                        else:
+                            st.success(f"🟢 WIDE OPEN GAP ({recent_videos}/10 recent)")
+                            st.caption("Go viral now! Nobody is covering this.")
+                            
+                        with st.expander("See Competitors"):
+                            for v in video_data[:3]:
+                                st.write(f"📺 [{v['title']}]({v['link']}) - *{v['publishedTime']}*")
+                    
+                    with st.expander("See Demand Context"):
+                        for t in context[word][:2]: st.write(f"• {t}")
 
-    # --- COL 2: ROMANTASY ---
-    with col2:
-        st.header("🧚‍♀️ Romantasy")
-        with st.spinner("Scanning..."):
-            trends, context, total = get_trends_for_genre([
-                'relationships', 'dating_advice', 
-                'FantasyRomance', 'ParanormalRomance', 'OtomeIsekai'
-            ])
-            for rank, (word, count) in enumerate(trends[:5]):
-                sat = (count / total) * 100
-                st.error(f"{word.upper()}")
-                st.caption(f"📊 {sat:.1f}%")
-                with st.expander("Context"):
-                    for t in context[word][:2]: st.write(f"• {t}")
-
-    # --- COL 3: DEEP MYSTERY (UPDATED) ---
-    with col3:
-        st.header("🕵️ Deep Mystery")
-        with st.spinner("Scanning Glitches & Signals..."):
-            # SWAPPED SOURCES: Gone are generic crime news. In are Glitches, Internet Mysteries, and Strangeness.
-            trends, context, total = get_trends_for_genre([
-                'Glitch_in_the_Matrix', 'InternetMysteries', 
-                'HighStrangeness', 'UnresolvedMysteries'
-            ])
-            
-            for rank, (word, count) in enumerate(trends[:5]):
-                sat = (count / total) * 100
-                st.info(f"{word.upper()}")
-                st.caption(f"📊 {sat:.1f}%")
-                with st.expander("Context"):
-                    for t in context[word][:2]: st.write(f"• {t}")
-
-
-    
-    st.divider()
-    st.markdown("### 🧬 How to Mix:")
-    st.markdown("*Take one keyword from each column to build your plot.*")
-    st.markdown("**Example:** *[Horror: BASEMENT] + [Romance: HUSBAND] + [Mystery: DISAPPEARANCE]*")
+    # --- RENDER COLUMNS ---
+    render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "scary story", col1)
+    render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio visual novel", col2)
+    render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery explained", col3)
 
 else:
-    st.write("Tap above to scan the markets.")
+    st.info("Tap 'SCAN' to load the market data.")
