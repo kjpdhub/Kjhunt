@@ -8,6 +8,8 @@ from youtubesearchpython import VideosSearch
 st.set_page_config(page_title="Trend Hunter Gap Finder", page_icon="🧿", layout="wide")
 
 # --- ENGINE: DEMAND (REDDIT) ---
+# We use @st.cache_data so this only runs ONCE every 10 mins, not every click.
+@st.cache_data(ttl=600)
 def get_trends_for_genre(subreddits):
     all_titles = set()
     for sub in subreddits:
@@ -45,17 +47,16 @@ def get_trends_for_genre(subreddits):
 
 # --- ENGINE: SUPPLY (YOUTUBE) ---
 def check_supply_gap(keyword, genre_suffix):
-    # Search for the keyword + genre (e.g., "Basement Horror Story")
+    # This cannot be cached because we want fresh results on click
     query = f"{keyword} {genre_suffix}"
     videos_search = VideosSearch(query, limit=10)
     results = videos_search.result()['result']
     
     recent_count = 0
-    recent_markers = ['hour', 'day', 'week', 'month'] # Markers for "Fresh" content
+    recent_markers = ['hour', 'day', 'week', 'month'] 
     
     for video in results:
         published = video.get('publishedTime', '')
-        # Check if video was uploaded recently (contains '2 days ago', '1 week ago' etc)
         if any(marker in published for marker in recent_markers):
             recent_count += 1
             
@@ -65,50 +66,51 @@ def check_supply_gap(keyword, genre_suffix):
 st.title("🧿 Market Gap Finder")
 st.markdown("Find the **Blue Ocean**: High Demand (Reddit) + Low Supply (YouTube).")
 
-if st.button("🚀 SCAN ALL MARKETS", type="primary", use_container_width=True):
-    
-    col1, col2, col3 = st.columns(3)
-    
-    # --- HELPER FUNCTION FOR UI ---
-    def render_column(title, emoji, subreddits, genre_suffix, col):
-        with col:
-            st.header(f"{emoji} {title}")
-            with st.spinner("Analyzing..."):
-                trends, context, total = get_trends_for_genre(subreddits)
+if st.button("🔄 Refresh Market Data"):
+    st.cache_data.clear()
+    st.rerun()
+
+col1, col2, col3 = st.columns(3)
+
+# --- HELPER FUNCTION FOR UI ---
+def render_column(title, emoji, subreddits, genre_suffix, col):
+    with col:
+        st.header(f"{emoji} {title}")
+        
+        # Data loads automatically now (No "Scan" button needed for the column)
+        trends, context, total = get_trends_for_genre(subreddits)
+        
+        for rank, (word, count) in enumerate(trends):
+            sat = (count / total) * 100
+            st.divider()
+            st.write(f"**#{rank+1} {word.upper()}**")
+            st.caption(f"Demand: {sat:.1f}%")
+            
+            # --- THE GAP CHECKER ---
+            btn_key = f"btn_{title}_{word}"
+            
+            # This is the magic part. The container allows the result to stay.
+            if st.button(f"🔍 Check Supply", key=btn_key):
+                with st.spinner("Checking YouTube..."):
+                    recent_videos, video_data = check_supply_gap(word, genre_suffix)
                 
-                for rank, (word, count) in enumerate(trends):
-                    sat = (count / total) * 100
-                    st.divider()
-                    st.write(f"**#{rank+1} {word.upper()}** (Demand: {sat:.1f}%)")
+                # LOGIC: SCORING THE GAP
+                if recent_videos >= 5:
+                    st.error(f"🔴 SATURATED ({recent_videos}/10 recent)")
+                elif recent_videos >= 2:
+                    st.warning(f"🟡 MODERATE ({recent_videos}/10 recent)")
+                else:
+                    st.success(f"🟢 WIDE OPEN GAP ({recent_videos}/10 recent)")
                     
-                    # --- THE GAP CHECKER ---
-                    # We use a unique key for each button so they don't conflict
-                    btn_key = f"btn_{title}_{word}"
-                    if st.button(f"🔍 Check Supply", key=btn_key):
-                        recent_videos, video_data = check_supply_gap(word, genre_suffix)
-                        
-                        # LOGIC: SCORING THE GAP
-                        if recent_videos >= 5:
-                            st.error(f"🔴 SATURATED ({recent_videos}/10 recent)")
-                            st.caption("Too many videos this month. Hard to compete.")
-                        elif recent_videos >= 2:
-                            st.warning(f"🟡 MODERATE ({recent_videos}/10 recent)")
-                            st.caption("Some competition. Needs a twist.")
-                        else:
-                            st.success(f"🟢 WIDE OPEN GAP ({recent_videos}/10 recent)")
-                            st.caption("Go viral now! Nobody is covering this.")
-                            
-                        with st.expander("See Competitors"):
-                            for v in video_data[:3]:
-                                st.write(f"📺 [{v['title']}]({v['link']}) - *{v['publishedTime']}*")
-                    
-                    with st.expander("See Demand Context"):
-                        for t in context[word][:2]: st.write(f"• {t}")
+                with st.expander("Competitors"):
+                    for v in video_data[:3]:
+                        st.write(f"📺 [{v['title']}]({v['link']})")
+            
+            with st.expander("Context"):
+                for t in context[word][:2]: st.write(f"• {t}")
 
-    # --- RENDER COLUMNS ---
-    render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "scary story", col1)
-    render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio visual novel", col2)
-    render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery explained", col3)
-
-else:
-    st.info("Tap 'SCAN' to load the market data.")
+# --- RENDER COLUMNS ---
+# We run this immediately so the UI is always visible
+render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "scary story", col1)
+render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio visual novel", col2)
+render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery explained", col3)
