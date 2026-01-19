@@ -69,14 +69,17 @@ if st.button("🚀 RUN DUAL SCAN", type="primary", use_container_width=True):
                 with st.expander("Examples"):
                     for t in h_context[word][:3]: st.write(f"• {t}")
 
-    # --- RIGHT COLUMN (ROMANCE + FANTASY) ---
+    
+    # --- RIGHT COLUMN (ROMANCE + FANTASY + WEB NOVEL) ---
     with col2:
-        st.header("🧚‍♀️ Love & Magic")
-        with st.spinner("Scanning Spells & Exes..."):
-            # ADDED: FantasyRomance and fantasy subreddits
+        st.header("🧚‍♀️ Romantasy & Isekai")
+        with st.spinner("Scanning for Alphas, Villainesses, and Magic..."):
+            
+            # UPDATED: Added specific 'Viral Fantasy' subreddits
             r_trends, r_context, r_total = get_trends_for_genre([
-                'relationships', 'confessions', 'dating_advice', 
-                'FantasyRomance', 'fantasy'
+                'relationships', 'dating_advice', # Real Drama
+                'FantasyRomance', 'ParanormalRomance', # Vampire/Wolf/Fae
+                'OtomeIsekai', 'Isekai' # Villainess/Reborn/System trends
             ])
             
             for rank, (word, count) in enumerate(r_trends[:5]):
@@ -86,6 +89,7 @@ if st.button("🚀 RUN DUAL SCAN", type="primary", use_container_width=True):
                 
                 with st.expander("Examples"):
                     for t in r_context[word][:3]: st.write(f"• {t}")
+
                     
     st.divider()
     st.info(f"💡 **DATA DEPTH:** Analyzed {h_total + r_total} stories.")
