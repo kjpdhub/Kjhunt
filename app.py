@@ -3,7 +3,6 @@ import feedparser
 from collections import Counter
 import string
 from duckduckgo_search import DDGS
-import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Trend Hunter Gap Finder", page_icon="🧿", layout="wide")
@@ -45,20 +44,21 @@ def get_trends_for_genre(subreddits):
     
     return Counter(words).most_common(5), word_to_titles, len(all_titles)
 
-# --- ENGINE: SUPPLY (DUCKDUCKGO VIDEO SEARCH) ---
+# --- ENGINE: SUPPLY (DUCKDUCKGO) ---
 def check_supply_gap(keyword, genre_suffix):
-    # This uses DuckDuckGo to search for videos (Site: YouTube mostly)
-    # It is far more robust than scraping YouTube directly from a cloud server.
+    # BROADER QUERY: We remove the 'genre_suffix' if the results are too thin
     query = f"{keyword} {genre_suffix}"
     
     results = []
     try:
         with DDGS() as ddgs:
-            # Search specifically for videos
-            results = list(ddgs.videos(query, max_results=10))
+            # Increased max_results to 15 to get a better sample
+            results = list(ddgs.videos(query, max_results=15))
     except Exception as e:
-        st.error(f"Search failed: {e}")
-        return 0, []
+        return -1, [] # Return -1 to indicate ERROR
+    
+    if not results:
+        return -1, [] # Return -1 to indicate NO DATA FOUND
     
     recent_count = 0
     recent_markers = ['hour', 'day', 'week', 'month'] 
@@ -66,10 +66,9 @@ def check_supply_gap(keyword, genre_suffix):
     processed_results = []
     
     for r in results:
-        # DDGS returns 'published' like "2 days ago"
         published = r.get('published', '').lower()
         title = r.get('title', 'Unknown')
-        link = r.get('content', '') # DDGS uses 'content' for the video link often
+        link = r.get('content', '') 
         
         if any(marker in published for marker in recent_markers):
             recent_count += 1
@@ -88,11 +87,9 @@ if st.button("🔄 Refresh Market Data"):
 
 col1, col2, col3 = st.columns(3)
 
-# --- HELPER FUNCTION FOR UI ---
 def render_column(title, emoji, subreddits, genre_suffix, col):
     with col:
         st.header(f"{emoji} {title}")
-        
         trends, context, total = get_trends_for_genre(subreddits)
         
         for rank, (word, count) in enumerate(trends):
@@ -104,25 +101,31 @@ def render_column(title, emoji, subreddits, genre_suffix, col):
             btn_key = f"btn_{title}_{word}"
             
             if st.button(f"🔍 Check Supply", key=btn_key):
-                with st.spinner("Scanning Video Market..."):
+                with st.spinner("Analyzing Saturation..."):
                     recent_videos, video_data = check_supply_gap(word, genre_suffix)
                 
-                # LOGIC: SCORING THE GAP
-                if recent_videos >= 5:
-                    st.error(f"🔴 SATURATED ({recent_videos}/10 recent)")
+                # --- NEW LOGIC: NO DATA vs. WIDE OPEN ---
+                if recent_videos == -1:
+                    st.info(f"⚪ NO DATA FOUND")
+                    st.caption("Search query too specific? Try manual search.")
+                elif recent_videos >= 5:
+                    st.error(f"🔴 SATURATED ({recent_videos}+ recent)")
                 elif recent_videos >= 2:
-                    st.warning(f"🟡 MODERATE ({recent_videos}/10 recent)")
+                    st.warning(f"🟡 MODERATE ({recent_videos} recent)")
                 else:
-                    st.success(f"🟢 WIDE OPEN GAP ({recent_videos}/10 recent)")
+                    # ONLY Green if we found results, but they are OLD
+                    st.success(f"🟢 WIDE OPEN GAP ({recent_videos} recent)")
+                    st.caption("Videos exist, but they are old.")
                     
-                with st.expander("Competitors"):
-                    for v in video_data[:3]:
-                        st.write(f"📺 [{v['title']}]({v['link']}) - *{v['published']}*")
+                if video_data:
+                    with st.expander("Competitors"):
+                        for v in video_data[:3]:
+                            st.write(f"📺 [{v['title']}]({v['link']}) - *{v['published']}*")
             
             with st.expander("Context"):
                 for t in context[word][:2]: st.write(f"• {t}")
 
-# --- RENDER COLUMNS ---
-render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "scary story", col1)
-render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio visual novel", col2)
-render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery explained", col3)
+# --- UPDATED SUFFIXES (SHORTER = BETTER RESULTS) ---
+render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "horror", col1)
+render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio", col2)
+render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery", col3)
