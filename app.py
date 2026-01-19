@@ -83,15 +83,16 @@ if st.button("🚀 RUN TRI-SCAN", type="primary", use_container_width=True):
                 with st.expander("Context"):
                     for t in context[word][:2]: st.write(f"• {t}")
 
-    # --- COL 3: MYSTERY & CRIME ---
+    # --- COL 3: DEEP MYSTERY (UPDATED) ---
     with col3:
-        st.header("🕵️ Mystery")
-        with st.spinner("Scanning..."):
-            # ADDED: True Crime, Unsolved Mysteries, RBI (Investigations)
+        st.header("🕵️ Deep Mystery")
+        with st.spinner("Scanning Glitches & Signals..."):
+            # SWAPPED SOURCES: Gone are generic crime news. In are Glitches, Internet Mysteries, and Strangeness.
             trends, context, total = get_trends_for_genre([
-                'UnresolvedMysteries', 'TrueCrimeDiscussion', 
-                'TrueCrime', 'RBI', 'ColdCases'
+                'Glitch_in_the_Matrix', 'InternetMysteries', 
+                'HighStrangeness', 'UnresolvedMysteries'
             ])
+            
             for rank, (word, count) in enumerate(trends[:5]):
                 sat = (count / total) * 100
                 st.info(f"{word.upper()}")
@@ -99,6 +100,8 @@ if st.button("🚀 RUN TRI-SCAN", type="primary", use_container_width=True):
                 with st.expander("Context"):
                     for t in context[word][:2]: st.write(f"• {t}")
 
+
+    
     st.divider()
     st.markdown("### 🧬 How to Mix:")
     st.markdown("*Take one keyword from each column to build your plot.*")
