@@ -2,13 +2,13 @@ import streamlit as st
 import feedparser
 from collections import Counter
 import string
-from youtubesearchpython import VideosSearch
+from duckduckgo_search import DDGS
+import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Trend Hunter Gap Finder", page_icon="🧿", layout="wide")
 
 # --- ENGINE: DEMAND (REDDIT) ---
-# We use @st.cache_data so this only runs ONCE every 10 mins, not every click.
 @st.cache_data(ttl=600)
 def get_trends_for_genre(subreddits):
     all_titles = set()
@@ -45,22 +45,38 @@ def get_trends_for_genre(subreddits):
     
     return Counter(words).most_common(5), word_to_titles, len(all_titles)
 
-# --- ENGINE: SUPPLY (YOUTUBE) ---
+# --- ENGINE: SUPPLY (DUCKDUCKGO VIDEO SEARCH) ---
 def check_supply_gap(keyword, genre_suffix):
-    # This cannot be cached because we want fresh results on click
+    # This uses DuckDuckGo to search for videos (Site: YouTube mostly)
+    # It is far more robust than scraping YouTube directly from a cloud server.
     query = f"{keyword} {genre_suffix}"
-    videos_search = VideosSearch(query, limit=10)
-    results = videos_search.result()['result']
+    
+    results = []
+    try:
+        with DDGS() as ddgs:
+            # Search specifically for videos
+            results = list(ddgs.videos(query, max_results=10))
+    except Exception as e:
+        st.error(f"Search failed: {e}")
+        return 0, []
     
     recent_count = 0
     recent_markers = ['hour', 'day', 'week', 'month'] 
     
-    for video in results:
-        published = video.get('publishedTime', '')
+    processed_results = []
+    
+    for r in results:
+        # DDGS returns 'published' like "2 days ago"
+        published = r.get('published', '').lower()
+        title = r.get('title', 'Unknown')
+        link = r.get('content', '') # DDGS uses 'content' for the video link often
+        
         if any(marker in published for marker in recent_markers):
             recent_count += 1
             
-    return recent_count, results
+        processed_results.append({'title': title, 'link': link, 'published': published})
+            
+    return recent_count, processed_results
 
 # --- THE UI ---
 st.title("🧿 Market Gap Finder")
@@ -77,7 +93,6 @@ def render_column(title, emoji, subreddits, genre_suffix, col):
     with col:
         st.header(f"{emoji} {title}")
         
-        # Data loads automatically now (No "Scan" button needed for the column)
         trends, context, total = get_trends_for_genre(subreddits)
         
         for rank, (word, count) in enumerate(trends):
@@ -86,12 +101,10 @@ def render_column(title, emoji, subreddits, genre_suffix, col):
             st.write(f"**#{rank+1} {word.upper()}**")
             st.caption(f"Demand: {sat:.1f}%")
             
-            # --- THE GAP CHECKER ---
             btn_key = f"btn_{title}_{word}"
             
-            # This is the magic part. The container allows the result to stay.
             if st.button(f"🔍 Check Supply", key=btn_key):
-                with st.spinner("Checking YouTube..."):
+                with st.spinner("Scanning Video Market..."):
                     recent_videos, video_data = check_supply_gap(word, genre_suffix)
                 
                 # LOGIC: SCORING THE GAP
@@ -104,13 +117,12 @@ def render_column(title, emoji, subreddits, genre_suffix, col):
                     
                 with st.expander("Competitors"):
                     for v in video_data[:3]:
-                        st.write(f"📺 [{v['title']}]({v['link']})")
+                        st.write(f"📺 [{v['title']}]({v['link']}) - *{v['published']}*")
             
             with st.expander("Context"):
                 for t in context[word][:2]: st.write(f"• {t}")
 
 # --- RENDER COLUMNS ---
-# We run this immediately so the UI is always visible
 render_column("Horror", "👻", ['nosleep', 'shortscarystories', 'ruleshorror'], "scary story", col1)
 render_column("Romantasy", "🧚‍♀️", ['relationships', 'FantasyRomance', 'ParanormalRomance'], "romance audio visual novel", col2)
 render_column("Mystery", "🕵️", ['Glitch_in_the_Matrix', 'InternetMysteries', 'HighStrangeness'], "mystery explained", col3)
